@@ -50,6 +50,9 @@ mv */*.txt ./
 # Remove empty and other 'junk' directories
 ls | grep -v "\.txt" | xargs rm -rf
 
+# Copy unzipped data to s3 bucket
+aws s3 cp /home/ubuntu/gutenberg_data/ s3://maxcantor-insight-deny2019a-bookbucket/gutenberg_data/unzipped_data/ --recursive
+
 # Clean text of legalese and other gutenberg junk using py script from same creator as link above
 
 # python setup
@@ -66,5 +69,5 @@ pip3 install tqdm
 python3 /home/ubuntu/Gutenberg/clean.py /home/ubuntu/gutenberg_data/ /home/ubuntu/gutenberg_data/cleaned/
 
 # Web-access to S3: http://maxcantor-insight-deny2019a-bookbucket.s3.amazonaws.com/
-# Copy to S3 Bucket
-aws s3 cp *.txt s3://maxcantor-insight-deny2019a-bookbucket/gutenberg_data/
+# Copy cleaned data to S3 Bucket
+aws s3 cp /home/ubuntu/gutenberg_data/ s3://maxcantor-insight-deny2019a-bookbucket/gutenberg_data/cleaned_data/ --recursive
