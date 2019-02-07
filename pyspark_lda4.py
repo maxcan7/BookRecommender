@@ -30,17 +30,23 @@ def main(*argv):
     aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
 
     # Read text data from S3 Bucket
+    # Setup for boto3 to read file information from s3
     s3 = boto3.resource('s3')
     bucket = s3.Bucket('maxcantor-insight-deny2019a-bookbucket')
     filelist = []
     i = 0
+
+    # Loop through all files and create a file list
     for obj in bucket.objects.filter(Prefix='gutenberg_data/unzipped_data/'):
         if obj.size:
-            filelist.append("s3n://maxcantor-insight-deny2019a-bookbucket/" + obj.key)
+            filelist.append( \
+                "s3n://maxcantor-insight-deny2019a-bookbucket/" + obj.key)
             i += 1
-    gutentext = sc.textFile(filelist[0]).keyBy(lambda x: filelist[0])
-    for filename in filelist[1:len(filelist)]:
-        gutentext += sc.textFile(filename).keyBy(lambda x: filename)
+
+    # Read each file from s3, key by the file name, and append them together
+    gutentext = sc.textFile( \
+        "s3n://maxcantor-insight-deny2019a-bookbucket/gutenberg_data/unzipped_data/*.txt") \
+        .keyBy(lambda filelist: [x for x in filelist)
 
     # Iterator function for processing partitioned data
     def preproc(iterator):
