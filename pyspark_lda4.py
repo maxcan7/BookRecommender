@@ -9,6 +9,7 @@ from pyspark.sql.types import DoubleType, StringType
 from pyspark.sql import functions as F
 from pyspark.sql import Row
 from pyspark.sql.functions import col, split
+import boto3
 import numpy
 # For importing stopwords
 import nltk
@@ -29,11 +30,17 @@ def main(*argv):
     aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
 
     # Read text data from S3 Bucket
-
-    # Get list of files in s3
-    gutentext = sc.wholeTextFiles( \
-        "s3n://maxcantor-insight-deny2019a-bookbucket/gutenberg_data/unzipped_data/*.txt") \
-        .map(lambda x: x[1])
+    s3 = boto3.resource('s3')
+    bucket = s3.Bucket('maxcantor-insight-deny2019a-bookbucket')
+    filelist = []
+    i = 0
+    for obj in bucket.objects.filter(Prefix='gutenberg_data/unzipped_data/'):
+        if obj.size:
+            filelist.append("s3n://maxcantor-insight-deny2019a-bookbucket/" + obj.key)
+            i += 1
+    gutentext = sc.textFile(filelist[0]).keyBy(lambda x: filelist[0])
+    for filename in filelist[1:len(filelist)]:
+        gutentext += sc.textFile(filename).keyBy(lambda x: filename)
 
     # Iterator function for processing partitioned data
     def preproc(iterator):
