@@ -1,14 +1,20 @@
+#! /usr/bin/env python
+
 # For pyspark context and schemas
 from pyspark import SparkConf, SparkContext
 from pyspark.sql import SQLContext
 # For accessing system environment variables
-import os, sys
+import os
+import sys
 # For processing dataframes
 import re as re
-from pyspark.sql.types import DoubleType, StringType
+from pyspark.sql.types import DoubleType
+from pyspark.sql.types import StringType
 from pyspark.sql import functions as F
 from pyspark.sql import Row
-from pyspark.sql.functions import col, split
+from pyspark.sql.functions import col
+from pyspark.sql.functions import split
+from pyspark.sql.functions import monotonically_increasing_id
 import boto3
 import fnmatch
 import numpy
@@ -16,17 +22,22 @@ import numpy
 import nltk
 from nltk.corpus import stopwords
 # For LDA
-from pyspark.ml.feature import CountVectorizer , IDF
-from pyspark.mllib.linalg import Vector, Vectors
+from pyspark.ml.feature import CountVectorizer
+from pyspark.ml.feature import IDF
+from pyspark.mllib.linalg import Vector
+from pyspark.mllib.linalg import Vectors
 from pyspark.ml.clustering import LDA
+
 
 # Get aws key info from system
 def aws_access(*argv):
     aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
     aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
-    
+    return aws_access_key_id, aws_secret_access_key
+
+
 # Set up spark context and s3 bucket and folder config
-def s3_to_pyspark(config):
+def s3_to_pyspark(config, aws_access_key_id, aws_secret_access_key):
     conf = SparkConf()
     conf.setMaster(config["publicDNS"])
     conf.setAppName("topicMakr")
@@ -40,9 +51,11 @@ def s3_to_pyspark(config):
     for obj in bucket.objects.filter(Prefix=config["bucketfolder"]):
         if obj.size:
             filelist.append("s3n://" + bucket.name + "/" + obj.key)
+
     # Filter list to just books (named with numbers as per project gutenberg)
-    filelist = fnmatch.filter(filelist, "s3n://" + bucket.name + "/" + config["bucketfolder"] + "/[0-9]*.txt")
-    #
+    filelist = fnmatch.filter(filelist, "s3n://" + bucket.name + "/" +
+                              config["bucketfolder"] + "[0-9]*.txt")
+
     # Iterator function for processing partitioned data
     def preproc(iterator):
         strip = lambda document: document.strip()
@@ -65,20 +78,21 @@ def s3_to_pyspark(config):
             # Remove words from the nltk corpus stop words list
             y = nostops(y)
             yield y
-    #
+
     # Stopword list from nltk corpus
     StopWords = set(stopwords.words("english"))
-    #
+
     # Read text data from S3 Bucket
     tokens = []
     titles = []
     i = 0
+
     # Loop through all books in folder in bucket
     for file in filelist:
         # Load in all books and make each line a document
         books = sc.wholeTextFiles(file).map(lambda x: x[1])
         # Turn text to string for titles
-        titles.append(books.collect().encode('utf-8'))
+        titles.append(books.collect()[0].encode('utf-8'))
         # Find 'Title:' in raw text
         start = titles[i].find('Title:')+7
         # Find the line break after the title
@@ -89,69 +103,96 @@ def s3_to_pyspark(config):
         # Run the preprocess function across books and zip
         tokens.append(books.mapPartitions(preproc).zipWithIndex())
         i += 1
+
     # Combine tokens
     tokens = sc.union(tokens)
 
+    # Return variables for subsequent functions
+    return sqlContext, tokens, titles
+
+
 # Convert tokens to TF-IDF and run LDA model
-def books_to_lda(ldaparam):
+def books_to_lda(ldaparam, sqlContext, tokens, titles):
     # Transform term tokens RDD to dataframe
     df_txts = sqlContext.createDataFrame(tokens, ["list_of_words", "index"])
+    # Replace index to monotonically increasing set of values
+    # (given zipWithIndex on tokens occurs over loop
+    # and therefore is all zeros)
+    df_txts = df_txts.withColumn('index', monotonically_increasing_id())
     # TF
-    cv = CountVectorizer(inputCol="list_of_words", \
-        outputCol="term_frequency")
+    cv = CountVectorizer(inputCol="list_of_words",
+                         outputCol="raw_features")
     cvmodel = cv.fit(df_txts)
     result_cv = cvmodel.transform(df_txts)
-    #
+
     # Create vocab list
     vocab = cvmodel.vocabulary
-    #
+
     # IDF
-    idf = IDF(inputCol="term_frequency", outputCol="inverse_document_frequency")
+    idf = IDF(inputCol="raw_features",
+              outputCol="features")
     idfModel = idf.fit(result_cv)
     result_tfidf = idfModel.transform(result_cv)
-    #
+
     # Run LDA model
     lda = LDA(k=ldaparam["k"], maxIter=ldaparam["maxIter"])
     model = lda.fit(result_tfidf)
+    return vocab, result_tfidf, model
+
 
 # Set up tables and write to postgres
-def postgres_tables(SQLconf,ldaparam):
+def postgres_tables(SQLconf, ldaparam, vocab,
+                    result_tfidf, model, sqlContext, titles):
+
     # Get table for topic | document distributions
     top_doc_table = model.transform(result_tfidf)
-    #
+
     # Add titles to top_doc_table
-    R = Row('index','title')
-    df_titles = sqlContext.createDataFrame([R(i, x) for i, x in enumerate(titles)])
-    top_doc_table = top_doc_table.join(df_titles, on = "index", how = "outer").orderBy(F.col("index"))
-    #
+    R = Row('index', 'title')
+    df_titles = sqlContext \
+        .createDataFrame([R(i, x) for i, x in enumerate(titles)])
+    top_doc_table = top_doc_table.join(df_titles, on="index", how="outer") \
+        .orderBy(F.col("index"))
+
     # Convert vectors to strings (for postgres)
-    top_doc_table = top_doc_table.withColumn("topicDistribution", top_doc_table["topicDistribution"].cast(StringType())) \
-        .withColumn("term_frequency", top_doc_table["term_frequency"].cast(StringType())) \
-        .withColumn("inverse_document_frequency", top_doc_table["inverse_document_frequency"].cast(StringType()))
-    #
+    top_doc_table = top_doc_table.withColumn(
+        "topicDistribution",
+        top_doc_table["topicDistribution"]
+        .cast(StringType())) \
+        .withColumn("raw_features", top_doc_table["raw_features"]
+                    .cast(StringType())) \
+        .withColumn("features",
+                    top_doc_table["features"]
+                    .cast(StringType()))
+
     # Get top 7 words per topic
-    topics = model.describeTopics(maxTermsPerTopic = SQLconf["topwords"])
+    topics = model.describeTopics(maxTermsPerTopic=SQLconf["topwords"])
     #
     # Add vocab to topics dataframe
     topics_rdd = topics.rdd
-    topics_words = topics_rdd\
-           .map(lambda row: row['termIndices']) \
-           .map(lambda idx_list: [vocab[idx] for idx in idx_list])\
-           .collect()
-    #
+    topics_words = topics_rdd \
+        .map(lambda row: row['termIndices']) \
+        .map(lambda idx_list: [vocab[idx] for idx in idx_list])\
+        .collect()
+
     # Create top terms dataframe
-    R = Row('topic','terms')
-    df_topterms = sqlContext.createDataFrame([R(i, x) for i, x in enumerate(topics_words)])
-    topics = topics.join(df_topterms, on = "topic", how = "outer").orderBy(F.col("topic"))
-    #
+    R = Row('topic', 'terms')
+    df_topterms = sqlContext \
+        .createDataFrame([R(i, x) for i, x in enumerate(topics_words)])
+    topics = topics.join(df_topterms, on="topic", how="outer") \
+        .orderBy(F.col("topic"))
+
     # Save dataframes to postgreSQL database on postgres_DB ec2 instance
     topics.write.format('jdbc') \
-        .options(url=SQLconf["postgresURL"],driver='org.postgresql.Driver',dbtable='topics') \
+        .options(url=SQLconf["postgresURL"],
+                 driver='org.postgresql.Driver', dbtable='topics') \
         .mode('overwrite').save()
-    #
+
     top_doc_table.write.format('jdbc') \
-        .options(url=SQLconf["postgresURL"],driver='org.postgresql.Driver',dbtable='documents') \
+        .options(url=SQLconf["postgresURL"],
+                 driver='org.postgresql.Driver', dbtable='documents') \
         .mode('overwrite').save()
+
 
 # Set configurations
 config = {
@@ -167,11 +208,20 @@ ldaparam = {
 
 SQLconf = {
     "topwords": 7,
-    "postgresURL": "jdbc:postgresql://ec2-54-205-173-0.compute-1.amazonaws.com/lda_booktopics"   
+    "postgresURL": "jdbc:postgresql://" +
+    "ec2-54-205-173-0.compute-1.amazonaws.com/lda_booktopics"
 }
 
 # Run pipeline functions
-aws_access(*sys.argv)
-s3_to_pyspark(config)
-books_to_lda(ldaparam)
-postgres_tables(SQLconf,ldaparam)
+if __name__ == '__main__':
+    [aws_access_key_id, aws_secret_access_key] = aws_access(*sys.argv)
+    [sqlContext, tokens, titles] = s3_to_pyspark(
+        config,
+        aws_access_key_id,
+        aws_secret_access_key)
+    [vocab, result_tfidf, model] = books_to_lda(
+        ldaparam, sqlContext,
+        tokens, titles)
+    postgres_tables(
+        SQLconf, ldaparam, vocab, result_tfidf,
+        model, sqlContext, titles)
