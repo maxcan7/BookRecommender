@@ -1,15 +1,12 @@
 # TopicMakr
-My Insight Data Engineering Fellowship 2019A Project
+My Insight Data Engineering Fellowship 2019A New York Project
 
-This is still very much a WORK IN PROGRESS
+TopicMakr is a proof of concept for a topic modeling platform for data scientists to train topics for industry use-cases such as recommendation systems.
 
-From an EC2 instance, scrape project gutenberg, do some preprocessing, copy the data at multiple stages to s3, and then run an LDA topic model in pyspark.
+The project uses whole open source books scraped from Project Gutenberg. These books are read into an s3 bucket for processing and model training.
 
-The goal of this pipeline is to create a framework for data scientists to access large quantities of book data, derive topics from the data, and store various iterations of data, model parameters, and model estimates (i.e. topic probabilities), with the hypothetical end-goal being a book recommendation system along the lines of 8tracks for music.
+The pipeline is a Latent Dirichlet Allocation (LDA) topic model. The book data are preprocessed, tokenized, and trained in pyspark. The model trains a pre-configurable number of topics from the book data, producing distributions for the probabilities of words given topics, and for topics given documents. Topics may be interpreted by visual inspection of the top N most probable words per topic (often 7), and the books may then be characterized by the most probable topics for each book.
 
-Current Goals:
-1. Get the code for title extraction to work efficiently at scale
-2. Work on front end (dash example set up, need it to draw from postgres)
-3. Clean up code (functionalize / make "pythonic")
-4. Round probability vectors before turning them into strings and pushing to postgres (for readability)
-5. Get more data (wikipedia scrape or something)
+After the model is trained in pyspark, these data are stored in a postgres database, where some of the outputs may be viewed on topicMakr.ml, producing with a dash web app.
+
+![Image of Pipeline](https://github.com/maxcan7/TopicMakr/blob/master/images/pipeline.png)
