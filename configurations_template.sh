@@ -1,4 +1,4 @@
-# Set configurations
+#!/usr/bin/env bash
 
 spark_master_ui = "spark://" + "spark master node public IP" + ":6066"
 
