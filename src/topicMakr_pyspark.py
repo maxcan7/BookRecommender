@@ -29,15 +29,19 @@ from pyspark.mllib.linalg import Vectors
 from pyspark.ml.clustering import LDA
 
 
-# Get aws key info from system
 def aws_access(*argv):
+    """
+    Get aws key information from system
+    """
     aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID")
     aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY")
     return aws_access_key_id, aws_secret_access_key
 
 
-# Set up spark context and s3 bucket and folder config
 def s3_to_pyspark(config, aws_access_key_id, aws_secret_access_key):
+    """
+    Set up spark context and s3 bucket and folder config
+    """
     conf = SparkConf()
     conf.setMaster(config["publicDNS"])
     conf.setAppName("topicMakr")
@@ -56,8 +60,10 @@ def s3_to_pyspark(config, aws_access_key_id, aws_secret_access_key):
     filelist = fnmatch.filter(filelist, "s3n://" + bucket.name + "/" +
                               config["bucketfolder"] + "[0-9]*.txt")
 
-    # Iterator function for processing partitioned data
     def preproc(iterator):
+        """
+        Iterator function for processing partitioned data
+        """
         strip = lambda document: document.strip()
         lower = lambda document: document.lower()
         split = lambda document: re.split(" ", document)
@@ -111,8 +117,11 @@ def s3_to_pyspark(config, aws_access_key_id, aws_secret_access_key):
     return sqlContext, tokens, titles
 
 
-# Convert tokens to TF-IDF and run LDA model
 def books_to_lda(ldaparam, sqlContext, tokens, titles):
+    """
+    Convert tokens to TF-IDF and run LDA model
+    """
+
     # Transform term tokens RDD to dataframe
     df_txts = sqlContext.createDataFrame(tokens, ["list_of_words", "index"])
     # Replace index to monotonically increasing set of values
@@ -140,9 +149,11 @@ def books_to_lda(ldaparam, sqlContext, tokens, titles):
     return vocab, result_tfidf, model
 
 
-# Set up tables and write to postgres
 def postgres_tables(SQLconf, ldaparam, vocab,
                     result_tfidf, model, sqlContext, titles):
+    """
+    Set up tables and write to postgres
+    """
 
     # Get table for topic | document distributions
     top_doc_table = model.transform(result_tfidf)
@@ -212,8 +223,10 @@ SQLconf = {
     "ec2-54-205-173-0.compute-1.amazonaws.com/lda_booktopics"
 }
 
-# Run pipeline functions
 if __name__ == '__main__':
+    """
+    Run pipeline functions
+    """
     [aws_access_key_id, aws_secret_access_key] = aws_access(*sys.argv)
     [sqlContext, tokens, titles] = s3_to_pyspark(
         config,
