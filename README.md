@@ -26,6 +26,9 @@ After the model is trained in pyspark, these data are stored in a postgres datab
     |    -- topicMakr_pyspark.py
      -- topicMakr_sparksubmit.sh
 
+## Pipeline Structure
+![Image of Pipeline](https://github.com/maxcan7/TopicMakr/blob/master/images/pipeline.png)
+
 ## How-To
 1. Clone this repository
 2. Run the shell scripts in ./environment_setup/ folder
@@ -62,5 +65,3 @@ After the model is trained in pyspark, these data are stored in a postgres datab
 * Project Gutenberg books were scraped using a modified version of [mbforbe's gutenberg scraping code](https://gist.github.com/mbforbes/cee3fd5bb3a797b059524fe8c8ccdc2b)  
 * For the version of the script used in this pipeline, see /data/scrape_gutenberg.sh  
 * This script requires s3cmd to be installed in unix 
-  
-![Image of Pipeline](https://github.com/maxcan7/TopicMakr/blob/master/images/pipeline.png)
