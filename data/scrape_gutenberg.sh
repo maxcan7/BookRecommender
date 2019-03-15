@@ -14,7 +14,7 @@ sudo apt-get install s3cmd
 wget -m -H -nd "http://www.gutenberg.org/robot/harvest?filetypes[]=txt&langs[]=en"
 
 # Copy raw data to s3 bucket
-aws s3 cp /home/ubuntu/gutenberg_data/ s3://maxcantor-insight-deny2019a-bookbucket/gutenberg_data/raw_data/ --recursive
+aws s3 cp 'path with your files' 's3 path for your bucket and folder' --recursive
 
 # Preprocessing
 
@@ -50,4 +50,4 @@ mv */*.txt ./
 ls | grep -v "\.txt" | xargs rm -rf
 
 # Copy unzipped data to s3 bucket
-aws s3 cp /home/ubuntu/gutenberg_data/ s3://maxcantor-insight-deny2019a-bookbucket/gutenberg_data/unzipped_data/ --recursive
+aws s3 cp 'path with your files' 's3 path for your bucket and folder' --recursive

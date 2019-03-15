@@ -7,8 +7,8 @@ from pandas import DataFrame
 import dash_table
 
 # Connect to lda_booktopics db
-conn = psycopg2.connect(dbname="lda_booktopics", user="postgres",
-                        host="ec2-54-205-173-0.compute-1.amazonaws.com",
+conn = psycopg2.connect(dbname="your database name", user="user for your database",
+                        host="ec2 instance containing the database",
                         port="5432")
 
 # Open cursor to perform database operations
