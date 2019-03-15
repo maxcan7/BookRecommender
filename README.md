@@ -24,7 +24,7 @@ After the model is trained in pyspark, these data are stored in a postgres datab
     |    -- pipeline.png
     |-- src
     |    -- topicMakr_pyspark.py
-     -- topicMakr_sparksubmit.sh
+    |-- topicMakr_sparksubmit.sh
 
 ## Pipeline Structure
 ![Image of Pipeline](https://github.com/maxcan7/TopicMakr/blob/master/images/pipeline.png)
