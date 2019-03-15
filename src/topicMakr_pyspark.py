@@ -38,27 +38,27 @@ def aws_access(*argv):
     return aws_access_key_id, aws_secret_access_key
 
 
-def s3_to_pyspark(config, aws_access_key_id, aws_secret_access_key):
+def s3_to_pyspark(aws_access_key_id, aws_secret_access_key):
     """
     Set up spark context and s3 bucket and folder config
     """
     conf = SparkConf()
-    conf.setMaster(config["publicDNS"])
+    conf.setMaster(os.getenv("publicDNS"))
     conf.setAppName("topicMakr")
     sc = SparkContext(conf=conf)
     sqlContext = SQLContext(sc)
     # Connect to bucket with boto3
     s3 = boto3.resource('s3')
-    bucket = s3.Bucket(config["bucket"])
+    bucket = s3.Bucket(os.getenv("bucket"))
     # Loop through all files and create a file list
     filelist = []
-    for obj in bucket.objects.filter(Prefix=config["bucketfolder"]):
+    for obj in bucket.objects.filter(Prefix=os.getenv("bucketfolder")):
         if obj.size:
             filelist.append("s3n://" + bucket.name + "/" + obj.key)
 
     # Filter list to just books (named with numbers as per project gutenberg)
     filelist = fnmatch.filter(filelist, "s3n://" + bucket.name + "/" +
-                              config["bucketfolder"] + "[0-9]*.txt")
+                              os.getenv("bucketfolder") + "[0-9]*.txt")
 
     def preproc(iterator):
         """
@@ -117,7 +117,7 @@ def s3_to_pyspark(config, aws_access_key_id, aws_secret_access_key):
     return sqlContext, tokens, titles
 
 
-def books_to_lda(ldaparam, sqlContext, tokens, titles):
+def books_to_lda(sqlContext, tokens, titles):
     """
     Convert tokens to TF-IDF and run LDA model
     """
@@ -144,13 +144,12 @@ def books_to_lda(ldaparam, sqlContext, tokens, titles):
     result_tfidf = idfModel.transform(result_cv)
 
     # Run LDA model
-    lda = LDA(k=ldaparam["k"], maxIter=ldaparam["maxIter"])
+    lda = LDA(k=os.getenv("k"), maxIter=os.getenv("maxIter"))
     model = lda.fit(result_tfidf)
     return vocab, result_tfidf, model
 
 
-def postgres_tables(SQLconf, ldaparam, vocab,
-                    result_tfidf, model, sqlContext, titles):
+def postgres_tables(vocab, result_tfidf, model, sqlContext, titles):
     """
     Set up tables and write to postgres
     """
@@ -177,7 +176,7 @@ def postgres_tables(SQLconf, ldaparam, vocab,
                     .cast(StringType()))
 
     # Get top 7 words per topic
-    topics = model.describeTopics(maxTermsPerTopic=SQLconf["topwords"])
+    topics = model.describeTopics(maxTermsPerTopic=os.getenv("topwords"))
     #
     # Add vocab to topics dataframe
     topics_rdd = topics.rdd
@@ -195,46 +194,25 @@ def postgres_tables(SQLconf, ldaparam, vocab,
 
     # Save dataframes to postgreSQL database on postgres_DB ec2 instance
     topics.write.format('jdbc') \
-        .options(url=SQLconf["postgresURL"],
+        .options(url=os.getenv("postgresURL"),
                  driver='org.postgresql.Driver', dbtable='topics') \
         .mode('overwrite').save()
 
     top_doc_table.write.format('jdbc') \
-        .options(url=SQLconf["postgresURL"],
+        .options(url=os.getenv("postgresURL"),
                  driver='org.postgresql.Driver', dbtable='documents') \
         .mode('overwrite').save()
 
-
-# Set configurations
-config = {
-    "publicDNS": "spark://ec2-54-227-182-209.compute-1.amazonaws.com:7077",
-    "bucket": "maxcantor-insight-deny2019a-bookbucket",
-    "bucketfolder": "gutenberg_data/unzipped_data/"
-}
-
-ldaparam = {
-    "k": 20,
-    "maxIter": 100
-}
-
-SQLconf = {
-    "topwords": 7,
-    "postgresURL": "jdbc:postgresql://" +
-    "ec2-54-205-173-0.compute-1.amazonaws.com/lda_booktopics"
-}
 
 if __name__ == '__main__':
     """
     Run pipeline functions
     """
     [aws_access_key_id, aws_secret_access_key] = aws_access(*sys.argv)
-    [sqlContext, tokens, titles] = s3_to_pyspark(
-        config,
-        aws_access_key_id,
-        aws_secret_access_key)
-    [vocab, result_tfidf, model] = books_to_lda(
-        ldaparam, sqlContext,
-        tokens, titles)
-    postgres_tables(
-        SQLconf, ldaparam, vocab, result_tfidf,
-        model, sqlContext, titles)
+
+    [sqlContext, tokens, titles] = s3_to_pyspark(aws_access_key_id,
+                                                 aws_secret_access_key)
+
+    [vocab, result_tfidf, model] = books_to_lda(sqlContext, tokens, titles)
+
+    postgres_tables(vocab, result_tfidf, model, sqlContext, titles)

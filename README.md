@@ -13,6 +13,7 @@ After the model is trained in pyspark, these data are stored in a postgres datab
 
 ## Directory Structure
     |-- README.md
+    |-- configurations_template.sh
     |-- dash
     |    -- topicMakr_app.py
     |-- data
